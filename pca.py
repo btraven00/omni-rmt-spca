@@ -142,17 +142,26 @@ def main():
     print(f"  k={k} lambda+={diag['lambda_plus']:.4f} sigma^2={diag['sigma_sq']:.4f} "
           f"KS={diag['ks_distance']}")
 
-    # Loud, because it is silent otherwise and it invalidates the run's premise:
-    # on non-convergence the crate falls back to per-gene standardisation, so
-    # what ran is "standardised sparse PCA with MP thresholding", NOT biwhitened
-    # RMT-sPCA. Measured on the be1 fixture this happens in EVERY configuration
-    # tried (2000 and 10000 genes, raw counts and log-normalised, bw_damp
-    # 1.0/0.8/0.5), residual plateauing at 1.2e-2..3.0e-2.
-    if not diag.get("sk_converged", False):
-        print(f"  WARNING: biwhitening did NOT converge ({diag['sk_iters']} iters); "
-              f"the crate fell back to per-gene standardisation. sigma^2="
-              f"{diag['sigma_sq']:.4f} (want ~1.0). Treat this run as the fallback "
-              f"method, not as RMT-sPCA.", flush=True)
+    # Three distinct outcomes, and only the first invalidates the run's premise.
+    # Keying this on sk_converged alone is WRONG: it is false both when the crate
+    # discarded the Sinkhorn factors and when it applied imperfect ones. The
+    # fallback test is the crate's own (spca.rs:221): residual > 1e-2.
+    #
+    # Measured: bw_damp 1.0 lands above the cliff every time (be1 3.0e-2, pbmc
+    # 3.34e-2), bw_damp 0.3 below it every time (be1 6.9e-3, pbmc 7.8e-3).
+    # Sinkhorn never reaches tol=1e-6 on real data; it exits on stagnation
+    # detection (no >=1% improvement over 100 iters), NOT on --bw_max_iter, so
+    # raising that flag does nothing.
+    print(f"  biwhitening: {diag['sk_iters']} iters, residual={diag['sk_residual']:.2e}, "
+          f"converged={diag['sk_converged']}")
+    if diag.get("used_fallback"):
+        print(f"  WARNING: residual {diag['sk_residual']:.2e} > 1e-2, so the crate "
+              f"DISCARDED the Sinkhorn factors and used per-gene standardisation "
+              f"(gene-side only -- biwhitening is two-sided). This run is NOT "
+              f"biwhitened RMT-sPCA. Try --bw_damp 0.3.", flush=True)
+    elif not diag["sk_converged"]:
+        print("  note: biwhitening stagnated short of tol but stayed under the 1e-2 "
+              "fallback cliff, so the real (imperfect) factors were applied.")
 
     cols = [f"PC{i + 1}" for i in range(k)]
     write_tsv(out / f"{args.name}_pcas.tsv", scores, cell_ids, cols, "cell_id")

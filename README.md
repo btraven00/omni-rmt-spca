@@ -1,8 +1,10 @@
-# rmt-spca-pca (spike)
+# omni-rmt-spca (spike)
 
-RMT-guided sparse PCA — [btraven00/rmt-spca](https://github.com/btraven00/rmt-spca),
-implementing Chardès et al. 2025 (arXiv:2509.15429) — as an omnibenchmark
-`PCA`-stage module.
+The omnibenchmark **module**, wrapping RMT-guided sparse PCA —
+[btraven00/rmt-spca](https://github.com/btraven00/rmt-spca), implementing
+Chardès et al. 2025 (arXiv:2509.15429) — for the `PCA` stage. The `omni-`
+prefix marks the benchmark wrapper; `rmt-spca` upstream is the algorithm crate,
+and this repo contains no algorithm of its own.
 
 Nothing is packaged. The conda env ships `cargo`; `pca.py` builds the shim in
 `rust/` on first use and caches the binary in `rust/target/release`. Python owns

@@ -75,11 +75,18 @@ fn main() -> std::io::Result<()> {
     let mut j = BufWriter::new(File::create(&a[3])?);
     write!(
         j,
+        // sk_residual is what actually decides the fallback (spca.rs:221 --
+        // `!bw_ok && bw_res > 1e-2`). sk_converged alone cannot tell "applied
+        // imperfect factors" from "discarded them": it is false in both cases,
+        // and those are completely different runs.
         "{{\"k\":{},\"p_out\":{},\"lambda_plus\":{},\"q\":{},\"sigma_sq\":{},\
-         \"ks_distance\":{},\"sk_iters\":{},\"sk_converged\":{},\"eigenvalues\":{:?}}}",
+         \"ks_distance\":{},\"sk_iters\":{},\"sk_converged\":{},\"sk_residual\":{},\
+         \"used_fallback\":{},\"eigenvalues\":{:?}}}",
         k, p_out, res.lambda_plus, res.q, res.sigma_sq,
         res.ks_distance.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
-        res.sk_iters, res.sk_converged, res.eigenvalues
+        res.sk_iters, res.sk_converged, res.sk_residual,
+        !res.sk_converged && res.sk_residual > 1e-2,
+        res.eigenvalues
     )?;
     j.flush()?;
     Ok(())
