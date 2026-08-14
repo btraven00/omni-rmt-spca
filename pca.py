@@ -17,13 +17,16 @@ Outputs
 {output_dir}/{name}_loadings.tsv   gene_id  PC1..PCk
 {output_dir}/{name}_rmt.json       k, lambda_plus, q, sigma_sq, KS, Sinkhorn state
 
-k is NOT --n_components
------------------------
+There is no --n_components
+--------------------------
 The method *derives* k: the number of covariance eigenvalues above the MP bulk
-edge lambda+ = (1+sqrt(q))^2. That is its whole contribution, so --n_components
-is accepted (the stage passes it) and used only as a cap, never as a target.
-The k actually found is written to the JSON and is the number of columns in the
-TSVs. Compare across modules at your own risk: a natural-k module and a fixed-k
+edge lambda+ = (1+sqrt(q))^2. That is its whole contribution, so this module
+refuses to take a component count at all -- benchmark parameters are per-module,
+so pc-rmt-spca just does not reference the *n_comps anchor, and no separate
+stage is needed. --k_max is a search ceiling, not a target, and the run FAILS if
+k saturates it (a capped count is the cap, not the method's answer).
+
+Compare across modules with that in mind: a natural-k module and a fixed-k
 module are not producing the same object.
 """
 
@@ -60,15 +63,45 @@ def parse_args():
     p.add_argument("--eigensolver", choices=["full", "fast"], default="full",
                    help="full = exact O(p^3) EVD + KS diagnostic; fast = approximate")
     p.add_argument("--bw_max_iter", type=int, default=1000)
-    p.add_argument("--bw_damp", type=float, default=1.0,
-                   help="Sinkhorn under-relaxation; try 0.5-0.8 if biwhitening oscillates")
-    p.add_argument("--n_components", type=int, default=0,
-                   help="CAP only, not a target: 0 = keep every component RMT finds")
+    p.add_argument("--bw_damp", type=float, default=0.3,
+                   help="Sinkhorn under-relaxation. The crate's default of 1.0 lands above "
+                        "the fallback cliff on every dataset tested (be1 3.0e-2, pbmc "
+                        "3.34e-2) and 0.5 is not enough either; 0.3 passes on both")
+    # Deliberately NO --n_components. This module does not take a component
+    # count: k is what the method computes (eigenvalues above the MP bulk edge),
+    # and accepting a target would invite the benchmark to overwrite the one
+    # output that distinguishes it from every other PCA module. Parameters are
+    # per-module in the benchmark yaml, so pc-rmt-spca simply does not reference
+    # the *n_comps anchor -- no separate stage is needed for this. If someone
+    # wires n_components in anyway, argparse rejects the unknown flag loudly,
+    # which is the intent.
+    p.add_argument("--k_max", type=int, default=500,
+                   help="ceiling on the component search. NOT a target: k is still "
+                        "count(eigenvalue > lambda+). The crate's own default is 20, which "
+                        "bound on every dataset tested (be1 true k=72, pbmc 394), so it is raised "
+                        "here. The run fails if k saturates this value")
     p.add_argument("--max_bw_residual", type=float, default=1e-2,
                    help="fail the run if the Sinkhorn residual exceeds this. Default 1e-2 "
                         "is the crate's own fallback cliff, so the default behaviour is "
                         "'never benchmark the fallback'. Lower it to demand a better fit")
     return p.parse_args()
+
+
+def check_k(diag, k_max):
+    """Refuse to publish a component count that is really a ceiling.
+
+    k saturating k_max means the subspace iteration never looked past it, so the
+    reported k is the cap, not the method's answer -- and nothing downstream can
+    tell the difference. Measured: the crate's default k_max=20 bound on be1
+    (true k = 72) and on pbmc.
+    """
+    if diag["k_capped"] or diag["k"] >= k_max:
+        sys.exit(
+            f"error: k={diag['k']} saturated --k_max {k_max} "
+            f"(eigenvalues above lambda+: {diag['k_rmt_true']}).\n"
+            f"       The reported component count would be the cap, not the RMT answer. "
+            f"Raise --k_max above {diag['k_rmt_true']}."
+        )
 
 
 def check_biwhitening(diag, max_residual):
@@ -130,7 +163,7 @@ def run_rust(X, args, workdir):
     subprocess.run(
         [str(ensure_binary()), str(mat), str(loadings), str(diag),
          args.lambda_frac, str(args.lambda_abs), str(args.bw_max_iter),
-         str(args.bw_damp), args.eigensolver],
+         str(args.bw_damp), args.eigensolver, str(args.k_max)],
         check=True,
     )
     W = np.atleast_2d(np.loadtxt(loadings))
@@ -161,6 +194,7 @@ def main():
     print(f"  biwhitening: {diag['sk_iters']} iters, residual={diag['sk_residual']:.2e}, "
           f"converged={diag['sk_converged']}, used_fallback={diag['used_fallback']}")
     check_biwhitening(diag, args.max_bw_residual)
+    check_k(diag, args.k_max)
 
     # Stage 0 drops all-zero genes before fitting, so W has one row per
     # SURVIVING gene. Map back by position over the genes we actually sent,
@@ -168,10 +202,6 @@ def main():
     kept = [j for j in range(X.shape[1]) if np.any(X[:, j] != 0.0)]
     if W.shape[0] != len(kept):
         sys.exit(f"error: loadings rows {W.shape[0]} != surviving genes {len(kept)}")
-
-    if args.n_components and W.shape[1] > args.n_components:
-        print(f"  capping k {W.shape[1]} -> {args.n_components}")
-        W = W[:, : args.n_components]
 
     scores = X[:, kept] @ W  # project_cells(): plain X @ W
     k = W.shape[1]

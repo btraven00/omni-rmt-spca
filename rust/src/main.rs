@@ -10,7 +10,7 @@
 //!   [n: u64][p: u64][data: f64 * n*p, row-major, cells x genes]
 //!
 //! Argv: <matrix.bin> <loadings.tsv> <diagnostics.json>
-//!       <lambda_frac|none> <lambda> <bw_max_iter> <bw_damp> <full|fast>
+//!       <lambda_frac|none> <lambda> <bw_max_iter> <bw_damp> <full|fast> <k_max>
 
 use std::env;
 use std::fs::File;
@@ -37,9 +37,9 @@ fn read_matrix(path: &str) -> std::io::Result<Mat<f64>> {
 
 fn main() -> std::io::Result<()> {
     let a: Vec<String> = env::args().collect();
-    if a.len() < 9 {
-        eprintln!("usage: {} <matrix.bin> <loadings.tsv> <diag.json> \
-                   <lambda_frac|none> <lambda> <bw_max_iter> <bw_damp> <full|fast>", a[0]);
+    if a.len() < 10 {
+        eprintln!("usage: {} <matrix.bin> <loadings.tsv> <diag.json> <lambda_frac|none> \
+                   <lambda> <bw_max_iter> <bw_damp> <full|fast> <k_max>", a[0]);
         std::process::exit(2);
     }
 
@@ -54,13 +54,26 @@ fn main() -> std::io::Result<()> {
         eigensolver: if a[8] == "fast" { EigensolverMode::Fast } else { EigensolverMode::Full },
         // KS only exists in Full mode; asking for it in Fast is a silent no-op.
         compute_ks: a[8] != "fast",
+        k_max: a[9].parse().unwrap(),
         verbose: true,
         ..FistaConfig::default()
     };
 
     let res = SparsePCA::new(config).fit(&data);
     let (p_out, k) = (res.components.nrows(), res.components.ncols());
-    eprintln!("  k (eigenvalues above lambda+): {k}");
+
+    // The k the crate returns is min(true k, internal k_max). k_max is a
+    // hard-coded 20 (spca.rs:364) and the subspace iteration never looks past
+    // it, so a capped run is indistinguishable from a genuine k=20 -- silently.
+    // In Full mode we have the whole rescaled spectrum, so count the real
+    // number of signal eigenvalues and report both. k_rmt_true == -1 means Fast
+    // mode, where s_eigenvalues is empty and the count is unavailable.
+    let k_rmt_true: i64 = if res.s_eigenvalues.is_empty() {
+        -1
+    } else {
+        res.s_eigenvalues.iter().filter(|&&e| e > res.lambda_plus).count() as i64
+    };
+    eprintln!("  k returned: {k}   k above lambda+ (uncapped): {k_rmt_true}");
 
     // Stage 0 drops all-zero genes, so p_out can be < the p we sent. The
     // wrapper needs to know: it maps rows back to gene ids by position, and a
@@ -81,11 +94,12 @@ fn main() -> std::io::Result<()> {
         // and those are completely different runs.
         "{{\"k\":{},\"p_out\":{},\"lambda_plus\":{},\"q\":{},\"sigma_sq\":{},\
          \"ks_distance\":{},\"sk_iters\":{},\"sk_converged\":{},\"sk_residual\":{},\
-         \"used_fallback\":{},\"eigenvalues\":{:?}}}",
+         \"used_fallback\":{},\"k_rmt_true\":{},\"k_capped\":{},\"eigenvalues\":{:?}}}",
         k, p_out, res.lambda_plus, res.q, res.sigma_sq,
         res.ks_distance.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
         res.sk_iters, res.sk_converged, res.sk_residual,
         !res.sk_converged && res.sk_residual > 1e-2,
+        k_rmt_true, k_rmt_true > k as i64,
         res.eigenvalues
     )?;
     j.flush()?;
