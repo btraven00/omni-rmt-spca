@@ -64,7 +64,37 @@ def parse_args():
                    help="Sinkhorn under-relaxation; try 0.5-0.8 if biwhitening oscillates")
     p.add_argument("--n_components", type=int, default=0,
                    help="CAP only, not a target: 0 = keep every component RMT finds")
+    p.add_argument("--max_bw_residual", type=float, default=1e-2,
+                   help="fail the run if the Sinkhorn residual exceeds this. Default 1e-2 "
+                        "is the crate's own fallback cliff, so the default behaviour is "
+                        "'never benchmark the fallback'. Lower it to demand a better fit")
     return p.parse_args()
+
+
+def check_biwhitening(diag, max_residual):
+    """Refuse to emit an embedding the fallback produced.
+
+    Above the crate's 1e-2 cliff it discards the Sinkhorn factors and uses
+    per-gene (one-sided) standardisation -- a different method from the one
+    under test, so a benchmark number from it is measuring the wrong thing.
+    Exiting non-zero fails the snakemake job rather than quietly publishing it.
+
+    NOTE the bar is 'the factors were applied', not 'Sinkhorn converged'.
+    Convergence means residual < tol = 1e-6, which was never reached in any run
+    on real data (be1 or pbmc, any damping) -- gating on that would fail
+    everything, always.
+    """
+    res = diag["sk_residual"]
+    if res > max_residual:
+        sys.exit(
+            f"error: biwhitening residual {res:.2e} > --max_bw_residual {max_residual:.0e} "
+            f"after {diag['sk_iters']} iters.\n"
+            f"       The crate discards the Sinkhorn factors above 1e-2 and falls back to "
+            f"per-gene standardisation, which is NOT the method under test.\n"
+            f"       Fix: --bw_damp 0.3 (measured: 1.0 -> 3.0e-2 fails, 0.3 -> 6.9e-3 passes "
+            f"on both be1 and pbmc). Raising --bw_max_iter does not help: Sinkhorn exits on "
+            f"stagnation detection, not on the iteration cap."
+        )
 
 
 def read_tenx_h5(path):
@@ -126,6 +156,12 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         W, diag = run_rust(X, args, Path(d))
 
+    # Gate before doing anything else: a fallback embedding must not reach the
+    # benchmark at all, so fail here rather than after writing the TSVs.
+    print(f"  biwhitening: {diag['sk_iters']} iters, residual={diag['sk_residual']:.2e}, "
+          f"converged={diag['sk_converged']}, used_fallback={diag['used_fallback']}")
+    check_biwhitening(diag, args.max_bw_residual)
+
     # Stage 0 drops all-zero genes before fitting, so W has one row per
     # SURVIVING gene. Map back by position over the genes we actually sent,
     # in the same order the crate filtered them (column order preserved).
@@ -152,15 +188,8 @@ def main():
     # Sinkhorn never reaches tol=1e-6 on real data; it exits on stagnation
     # detection (no >=1% improvement over 100 iters), NOT on --bw_max_iter, so
     # raising that flag does nothing.
-    print(f"  biwhitening: {diag['sk_iters']} iters, residual={diag['sk_residual']:.2e}, "
-          f"converged={diag['sk_converged']}")
-    if diag.get("used_fallback"):
-        print(f"  WARNING: residual {diag['sk_residual']:.2e} > 1e-2, so the crate "
-              f"DISCARDED the Sinkhorn factors and used per-gene standardisation "
-              f"(gene-side only -- biwhitening is two-sided). This run is NOT "
-              f"biwhitened RMT-sPCA. Try --bw_damp 0.3.", flush=True)
-    elif not diag["sk_converged"]:
-        print("  note: biwhitening stagnated short of tol but stayed under the 1e-2 "
+    if not diag["sk_converged"]:
+        print("  note: biwhitening stagnated short of tol=1e-6 but stayed under the "
               "fallback cliff, so the real (imperfect) factors were applied.")
 
     cols = [f"PC{i + 1}" for i in range(k)]
