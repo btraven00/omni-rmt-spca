@@ -5,10 +5,13 @@ edition = "2021"
 publish = false
 
 [dependencies]
-# Path dep for the spike -- swap for
+# ABSOLUTE path on purpose: omnibenchmark clones this module into
+# out_*/.modules/omni-rmt-spca/<sha>/, so a RELATIVE path dep would not resolve
+# from the clone -- the build would fail only inside a real benchmark run.
+# Spike-only; swap for
 #   rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "..." }
 # once that is pushed, and the module stops depending on a local checkout.
-rmt-spca = { path = "../../../../../phd/rmt-spca" }
+rmt-spca = { path = "/home/b/phd/rmt-spca" }
 faer = "0.19"
 
 [profile.release]
