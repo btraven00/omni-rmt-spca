@@ -1,0 +1,11 @@
+# OmniBenchmark Module Configuration
+
+entrypoints:
+  default: pca.py
+  pca: pca.py
+
+benchmarks:
+  - name: split-stages
+    repo: https://github.com/omni-scrna/split-stages-plan
+    plan: benchmark_pca_conda.yaml
+    ref: spike/tpca

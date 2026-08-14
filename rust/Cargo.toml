@@ -1,0 +1,15 @@
+[package]
+name = "omni-rmt-spca"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Path dep for the spike -- swap for
+#   rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "..." }
+# once that is pushed, and the module stops depending on a local checkout.
+rmt-spca = { path = "../../../../../phd/rmt-spca" }
+faer = "0.19"
+
+[profile.release]
+opt-level = 3

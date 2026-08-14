@@ -1,0 +1,14 @@
+name: rmt-spca
+channels:
+- conda-forge
+- nodefaults
+dependencies:
+# Python only does I/O; the arithmetic is the rmt-spca crate.
+- python >=3.12,<3.15
+- numpy >=2,<3
+- scipy >=1.14,<2
+- h5py >=3.11,<4
+# Nothing is packaged: `cargo` comes from here and pca.py builds rust/ on first
+# use, caching the binary in rust/target/release. The first build needs network
+# to fetch faer/rayon/statrs unless ~/.cargo already has them.
+- rust >=1.75
