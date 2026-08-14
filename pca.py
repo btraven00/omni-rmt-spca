@@ -95,13 +95,19 @@ def check_k(diag, k_max):
     tell the difference. Measured: the crate's default k_max=20 bound on be1
     (true k = 72) and on pbmc.
     """
-    if diag["k_capped"] or diag["k"] >= k_max:
+    if diag["k_capped"]:
         sys.exit(
-            f"error: k={diag['k']} saturated --k_max {k_max} "
+            f"error: k={diag['k']} saturated the ceiling --k_max {diag['k_max']} "
             f"(eigenvalues above lambda+: {diag['k_rmt_true']}).\n"
             f"       The reported component count would be the cap, not the RMT answer. "
             f"Raise --k_max above {diag['k_rmt_true']}."
         )
+    # The two counts come from different estimators and disagree by ~1 at the
+    # boundary (pbmc: 393 vs 394). Report a wider gap; do not fail on it.
+    gap = diag["k_rmt_true"] - diag["k"]
+    if diag["k_rmt_true"] >= 0 and abs(gap) > 2:
+        print(f"  note: subspace-iteration k={diag['k']} vs full-spectrum count "
+              f"{diag['k_rmt_true']} (gap {gap})")
 
 
 def check_biwhitening(diag, max_residual):

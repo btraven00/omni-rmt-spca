@@ -43,6 +43,7 @@ fn main() -> std::io::Result<()> {
         std::process::exit(2);
     }
 
+    let k_max_req: usize = a[9].parse().unwrap();
     let data = read_matrix(&a[1])?;
     eprintln!("  matrix (cells x genes): {} x {}", data.nrows(), data.ncols());
 
@@ -54,11 +55,12 @@ fn main() -> std::io::Result<()> {
         eigensolver: if a[8] == "fast" { EigensolverMode::Fast } else { EigensolverMode::Full },
         // KS only exists in Full mode; asking for it in Fast is a silent no-op.
         compute_ks: a[8] != "fast",
-        k_max: a[9].parse().unwrap(),
+        k_max: k_max_req,
         verbose: true,
         ..FistaConfig::default()
     };
 
+    let k_max_eff = k_max_req.min(data.ncols()).min(data.nrows());
     let res = SparsePCA::new(config).fit(&data);
     let (p_out, k) = (res.components.nrows(), res.components.ncols());
 
@@ -94,12 +96,18 @@ fn main() -> std::io::Result<()> {
         // and those are completely different runs.
         "{{\"k\":{},\"p_out\":{},\"lambda_plus\":{},\"q\":{},\"sigma_sq\":{},\
          \"ks_distance\":{},\"sk_iters\":{},\"sk_converged\":{},\"sk_residual\":{},\
-         \"used_fallback\":{},\"k_rmt_true\":{},\"k_capped\":{},\"eigenvalues\":{:?}}}",
+         \"used_fallback\":{},\"k_rmt_true\":{},\"k_max\":{},\"k_capped\":{},\
+         \"eigenvalues\":{:?}}}",
         k, p_out, res.lambda_plus, res.q, res.sigma_sq,
         res.ks_distance.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
         res.sk_iters, res.sk_converged, res.sk_residual,
         !res.sk_converged && res.sk_residual > 1e-2,
-        k_rmt_true, k_rmt_true > k as i64,
+        k_rmt_true, k_max_eff,
+        // The cap binds iff k saturates it. NOT `k_rmt_true > k`: the two counts
+        // come from different estimators (subspace-iteration Rayleigh quotients
+        // vs the full EVD spectrum) and disagree by ~1 at the boundary, where an
+        // eigenvalue sits essentially on lambda+. pbmc: 393 vs 394.
+        k >= k_max_eff,
         res.eigenvalues
     )?;
     j.flush()?;
