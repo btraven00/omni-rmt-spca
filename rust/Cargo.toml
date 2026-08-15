@@ -9,10 +9,12 @@ publish = false
 # out_*/.modules/omni-rmt-spca/<sha>/ and may run on a machine that has no local
 # checkout, so a path dep (relative OR absolute) is not portable.
 #
-# 1d9cd09 is the commit that makes k_max configurable and changes the bw_damp
-# default to 0.3. Anything older will NOT compile against this module:
-# FistaConfig has no k_max field before it.
-rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "1d9cd09" }
+# a2c6028 is the pushed tip of main. The commit that matters underneath it is
+# 891e127 (configurable k_max + bw_damp default 0.3); anything at or before
+# 5317740 will NOT compile against this module, since FistaConfig has no k_max
+# field there. Pinned to the tip rather than 891e127 so the pin matches what is
+# actually on the branch.
+rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "a2c6028" }
 faer = "0.19"
 
 [profile.release]
