@@ -5,13 +5,14 @@ edition = "2021"
 publish = false
 
 [dependencies]
-# ABSOLUTE path on purpose: omnibenchmark clones this module into
-# out_*/.modules/omni-rmt-spca/<sha>/, so a RELATIVE path dep would not resolve
-# from the clone -- the build would fail only inside a real benchmark run.
-# Spike-only; swap for
-#   rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "..." }
-# once that is pushed, and the module stops depending on a local checkout.
-rmt-spca = { path = "/home/b/phd/rmt-spca" }
+# Pinned by rev, not path: omnibenchmark clones this module into
+# out_*/.modules/omni-rmt-spca/<sha>/ and may run on a machine that has no local
+# checkout, so a path dep (relative OR absolute) is not portable.
+#
+# 1d9cd09 is the commit that makes k_max configurable and changes the bw_damp
+# default to 0.3. Anything older will NOT compile against this module:
+# FistaConfig has no k_max field before it.
+rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "1d9cd09" }
 faer = "0.19"
 
 [profile.release]
