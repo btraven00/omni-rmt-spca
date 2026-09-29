@@ -13,7 +13,7 @@ goodness-of-fit -> subspace iteration above lambda+ -> FISTA sparse PCA.
 
 Outputs
 -------
-{output_dir}/{name}_pcas.tsv       cell_id  PC1..PCk
+{output_dir}/{name}_embedding.tsv  cell_id  PC1..PCk
 {output_dir}/{name}_loadings.tsv   gene_id  PC1..PCk
 {output_dir}/{name}_rmt.json       k, lambda_plus, q, sigma_sq, KS, Sinkhorn state
 
@@ -229,10 +229,10 @@ def main():
               "fallback cliff, so the real (imperfect) factors were applied.")
 
     cols = [f"PC{i + 1}" for i in range(k)]
-    write_tsv(out / f"{args.name}_pcas.tsv", scores, cell_ids, cols, "cell_id")
+    write_tsv(out / f"{args.name}_embedding.tsv", scores, cell_ids, cols, "cell_id")
     write_tsv(out / f"{args.name}_loadings.tsv", W, [gene_ids[j] for j in kept], cols, "gene_id")
     (out / f"{args.name}_rmt.json").write_text(json.dumps(diag, indent=2))
-    print(f"  wrote: {out}/{args.name}_{{pcas,loadings}}.tsv + _rmt.json")
+    print(f"  wrote: {out}/{args.name}_{{embedding,loadings}}.tsv + _rmt.json")
 
 
 if __name__ == "__main__":
