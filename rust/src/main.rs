@@ -11,6 +11,7 @@
 //!
 //! Argv: <matrix.bin> <loadings.tsv> <diagnostics.json>
 //!       <lambda_frac|none> <lambda> <bw_max_iter> <bw_damp> <full|fast> <k_max>
+//!       [<k_force|none>]   (ablation; absent = none = the method's own k)
 
 use std::env;
 use std::fs::File;
@@ -56,6 +57,10 @@ fn main() -> std::io::Result<()> {
         // KS only exists in Full mode; asking for it in Fast is a silent no-op.
         compute_ks: a[8] != "fast",
         k_max: k_max_req,
+        k_force: match a.get(10).map(String::as_str) {
+            None | Some("none") => None,
+            Some(n) => Some(n.parse().unwrap()),
+        },
         verbose: true,
         ..FistaConfig::default()
     };
@@ -97,7 +102,7 @@ fn main() -> std::io::Result<()> {
         "{{\"k\":{},\"p_out\":{},\"lambda_plus\":{},\"q\":{},\"sigma_sq\":{},\
          \"ks_distance\":{},\"sk_iters\":{},\"sk_converged\":{},\"sk_residual\":{},\
          \"used_fallback\":{},\"k_rmt_true\":{},\"k_max\":{},\"k_capped\":{},\
-         \"eigenvalues\":{:?}}}",
+         \"k_signal\":{},\"eigenvalues\":{:?}}}",
         k, p_out, res.lambda_plus, res.q, res.sigma_sq,
         res.ks_distance.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
         res.sk_iters, res.sk_converged, res.sk_residual,
@@ -107,7 +112,9 @@ fn main() -> std::io::Result<()> {
         // come from different estimators (subspace-iteration Rayleigh quotients
         // vs the full EVD spectrum) and disagree by ~1 at the boundary, where an
         // eigenvalue sits essentially on lambda+. pbmc: 393 vs 394.
-        k >= k_max_eff,
+        // On k_signal, not k: under k_force, k is the requested count.
+        res.k_signal >= k_max_eff,
+        res.k_signal,
         res.eigenvalues
     )?;
     j.flush()?;

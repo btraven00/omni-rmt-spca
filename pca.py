@@ -80,6 +80,11 @@ def parse_args():
                         "count(eigenvalue > lambda+). The crate's own default is 20, which "
                         "bound on every dataset tested (be1 true k=72, pbmc 394), so it is raised "
                         "here. The run fails if k saturates this value")
+    # ...except as an ablation (lattice W5), named so nobody mistakes it for one.
+    p.add_argument("--ablate_n_components", type=int, default=None,
+                   help="ABLATION: fit N components instead of count(eigenvalue > "
+                        "lambda+). N <= --k_max; the signal count is still computed, "
+                        "checked against --k_max and reported as k_signal")
     p.add_argument("--max_bw_residual", type=float, default=1e-2,
                    help="fail the run if the Sinkhorn residual exceeds this. Default 1e-2 "
                         "is the crate's own fallback cliff, so the default behaviour is "
@@ -97,16 +102,16 @@ def check_k(diag, k_max):
     """
     if diag["k_capped"]:
         sys.exit(
-            f"error: k={diag['k']} saturated the ceiling --k_max {diag['k_max']} "
+            f"error: k={diag['k_signal']} saturated the ceiling --k_max {diag['k_max']} "
             f"(eigenvalues above lambda+: {diag['k_rmt_true']}).\n"
             f"       The reported component count would be the cap, not the RMT answer. "
             f"Raise --k_max above {diag['k_rmt_true']}."
         )
     # The two counts come from different estimators and disagree by ~1 at the
     # boundary (pbmc: 393 vs 394). Report a wider gap; do not fail on it.
-    gap = diag["k_rmt_true"] - diag["k"]
+    gap = diag["k_rmt_true"] - diag["k_signal"]
     if diag["k_rmt_true"] >= 0 and abs(gap) > 2:
-        print(f"  note: subspace-iteration k={diag['k']} vs full-spectrum count "
+        print(f"  note: subspace-iteration k={diag['k_signal']} vs full-spectrum count "
               f"{diag['k_rmt_true']} (gap {gap})")
 
 
@@ -169,7 +174,8 @@ def run_rust(X, args, workdir):
     subprocess.run(
         [str(ensure_binary()), str(mat), str(loadings), str(diag),
          args.lambda_frac, str(args.lambda_abs), str(args.bw_max_iter),
-         str(args.bw_damp), args.eigensolver, str(args.k_max)],
+         str(args.bw_damp), args.eigensolver, str(args.k_max),
+         "none" if args.ablate_n_components is None else str(args.ablate_n_components)],
         check=True,
     )
     W = np.atleast_2d(np.loadtxt(loadings))
@@ -189,6 +195,9 @@ def main():
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    if args.ablate_n_components is not None and not 1 <= args.ablate_n_components <= args.k_max:
+        sys.exit(f"error: --ablate_n_components {args.ablate_n_components} outside "
+                 f"[1, --k_max {args.k_max}]: raise --k_max, do not clamp")
     X, cell_ids, gene_ids = read_tenx_h5(args.normalized_selected_h5)
     print(f"  matrix (cells x genes): {X.shape}")
 
@@ -211,7 +220,7 @@ def main():
 
     scores = X[:, kept] @ W  # project_cells(): plain X @ W
     k = W.shape[1]
-    print(f"  k={k} lambda+={diag['lambda_plus']:.4f} sigma^2={diag['sigma_sq']:.4f} "
+    print(f"  k={k} (signal count {diag['k_signal']}) lambda+={diag['lambda_plus']:.4f} sigma^2={diag['sigma_sq']:.4f} "
           f"KS={diag['ks_distance']}")
 
     # Three distinct outcomes, and only the first invalidates the run's premise.

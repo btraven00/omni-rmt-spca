@@ -14,7 +14,11 @@ publish = false
 # 5317740 will NOT compile against this module, since FistaConfig has no k_max
 # field there. Pinned to the tip rather than 891e127 so the pin matches what is
 # actually on the branch.
-rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "a2c6028" }
+#
+# c3e6309 (branch ablate-k) is a2c6028 + FistaConfig::k_force / k_signal only,
+# for --ablate_n_components; the default path is a2c6028's. NOT main: main has
+# a Sinkhorn stopping-rule change that would move every existing pc-rmt-spca run.
+rmt-spca = { git = "https://github.com/btraven00/rmt-spca", rev = "c3e6309" }
 faer = "0.19"
 
 [profile.release]

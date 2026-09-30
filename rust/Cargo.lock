@@ -779,7 +779,7 @@ checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 [[package]]
 name = "rmt-spca"
 version = "0.1.0"
-source = "git+https://github.com/btraven00/rmt-spca?rev=a2c6028#a2c6028c47df7957a8daa8c22ba6fd67dde52b81"
+source = "git+https://github.com/btraven00/rmt-spca?rev=c3e6309#c3e63091aa9bbf0bb757b5d8550556b69ce93cc0"
 dependencies = [
  "faer",
  "rayon",
